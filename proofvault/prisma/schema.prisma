@@ -1,0 +1,308 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Users table - core identity
+model users {
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  authProvider        String?  // email, google, github
+  emailVerifiedAt     DateTime?
+  role                String   @default("user") // user, admin
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+  
+  // Relations
+  profile             profiles?
+  portfolios          portfolios[]
+  subscriptions       subscriptions?
+  mediaFiles          media_files[]
+  notifications       notifications[]
+  auditLogs           audit_logs[]
+  
+  @@map("users")
+}
+
+/// Profiles table - personal/professional identity data
+model profiles {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @relation(fields: [id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  displayName         String?
+  headline            String?
+  bio                 String?
+  location            String?
+  avatarMediaId       String?  @relation(fields: [avatarMediaId], references: [id])
+  avatarMedia         media_files? @relation(name: "AvatarMedia")
+  websiteUrl          String?
+  socialLinks         Json?
+  resumeMediaId       String?  @relation(fields: [resumeMediaId], references: [id])
+  resumeMedia         media_files? @relation(name: "ResumeMedia")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  @@map("profiles")
+}
+
+/// Portfolios table - published portfolio presentations
+model portfolios {
+  id                  String   @id @default(uuid())
+  userId              String   @relation(fields: [userId], references: [id])
+  slug                String   @unique // 3-50 chars, [a-z0-9-]
+  status              String   // draft, published
+  sectionsConfig      Json?    // which sections enabled + order
+  theme               Json?    // constrained design-system options only
+  publishedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+  
+  // Relations
+  user                users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects            projects[]
+  analyticsEvents     analytics_events[]
+  
+  @@map("portfolios")
+}
+
+/// Projects table - individual work items inside portfolios
+model projects {
+  id                  String   @id @default(uuid())
+  portfolioId         String   @relation(fields: [portfolioId], references: [id])
+  title               String
+  description         String
+  coverMediaId        String?  @relation(fields: [coverMediaId], references: [id])
+  coverMedia          media_files?
+  liveUrl             String?
+  repoUrl             String?
+  startDate           DateTime?
+  endDate             DateTime?
+  featured            Boolean  @default(false)
+  sortOrder           Int
+  status              String   // active, archived
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+  
+  // Relations
+  portfolio           portfolios @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  projectMedia        project_media[]
+  projectTechnologies project_technologies[]
+  projectTags         project_tags[]
+  
+  @@map("projects")
+}
+
+/// Media files table - uploaded files stored in Cloudflare R2
+model media_files {
+  id                  String   @id @default(uuid())
+  userId              String   @relation(fields: [userId], references: [id])
+  r2Key               String
+  mimeType            String
+  fileSizeBytes       Int
+  originalFilename    String
+  altText             String?  // required for images before portfolio publish
+  createdAt           DateTime @default(now())
+  deletedAt           DateTime?
+  
+  // Relations
+  user                users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coverProjects       projects[] @relation(name: "CoverMedia")
+  avatarProfiles      profiles[] @relation(name: "AvatarMedia")
+  resumeProfiles      profiles[] @relation(name: "ResumeMedia")
+  projectMedia        project_media[]
+  variants            media_variants[]
+  
+  @@map("media_files")
+}
+
+/// Media variants table - optimized/resized versions of uploaded media
+model media_variants {
+  id                  String   @id @default(uuid())
+  mediaFileId         String   @relation(fields: [mediaFileId], references: [id], onDelete: Cascade)
+  variantType         String   // thumbnail, web, original
+  r2Key               String
+  width               Int?
+  height              Int?
+  fileSizeBytes       Int?
+  mimeType            String
+  createdAt           DateTime @default(now())
+  
+  // Relations
+  mediaFile           media_files @relation(fields: [mediaFileId], references: [id])
+  
+  @@map("media_variants")
+}
+
+/// Technologies table - tech skills/tags for projects
+model technologies {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  category            String?
+  createdAt           DateTime @default(now())
+  
+  // Relations
+  projectTechnologies project_technologies[]
+  
+  @@map("technologies")
+}
+
+/// Tags table - free-form tags for projects
+model tags {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  createdAt           DateTime @default(now())
+  
+  // Relations
+  projectTags         project_tags[]
+  
+  @@map("tags")
+}
+
+/// Join table - projects to media files
+model project_media {
+  id                  String   @id @default(uuid())
+  projectId           String   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mediaFileId         String   @relation(fields: [mediaFileId], references: [id], onDelete: Cascade)
+  sortOrder           Int
+  
+  // Relations
+  project             projects @relation(fields: [projectId], references: [id])
+  mediaFile           media_files @relation(fields: [mediaFileId], references: [id])
+  
+  @@unique([projectId, mediaFileId])
+  @@map("project_media")
+}
+
+/// Join table - projects to technologies
+model project_technologies {
+  id                  String   @id @default(uuid())
+  projectId           String   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  technologyId        String   @relation(fields: [technologyId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  project             projects @relation(fields: [projectId], references: [id])
+  technology          technologies @relation(fields: [technologyId], references: [id])
+  
+  @@unique([projectId, technologyId])
+  @@map("project_technologies")
+}
+
+/// Join table - projects to tags
+model project_tags {
+  id                  String   @id @default(uuid())
+  projectId           String   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tagId               String   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  project             projects @relation(fields: [projectId], references: [id])
+  tag                 tags @relation(fields: [tagId], references: [id])
+  
+  @@unique([projectId, tagId])
+  @@map("project_tags")
+}
+
+/// Subscriptions table - billing subscriptions
+model subscriptions {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @relation(fields: [id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  plan                String   // free, professional, enterprise
+  status              String   // active, past_due, canceled
+  provider            String   // stripe
+  providerReference   String?  // Stripe subscription ID
+  renewalDate         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  // Relations
+  invoices            invoices[]
+  
+  @@map("subscriptions")
+}
+
+/// Invoices table - billing records
+model invoices {
+  id                  String   @id @default(uuid())
+  subscriptionId      String   @relation(fields: [subscriptionId], references: [id])
+  userId              String   @relation(fields: [userId], references: [id])
+  stripeInvoiceId     String   @unique
+  amountCents         Int
+  currency            String
+  status              String   // mirrors Stripe invoice status
+  invoicePdfUrl       String   // Stripe-hosted, never stored in R2
+  periodStart         DateTime
+  periodEnd           DateTime
+  createdAt           DateTime @default(now())
+  
+  // Relations
+  subscription        subscriptions @relation(fields: [subscriptionId], references: [id])
+  user                users @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([subscriptionId])
+  @@map("invoices")
+}
+
+/// Notifications table - in-app and email notifications
+model notifications {
+  id                  String   @id @default(uuid())
+  userId              String   @relation(fields: [userId], references: [id])
+  type                String
+  payload             Json
+  readAt              DateTime?
+  createdAt           DateTime @default(now())
+  
+  // Relations
+  user                users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+/// Audit logs table - security and compliance logging
+model audit_logs {
+  id                  String   @id @default(uuid())
+  userId              String?  @relation(fields: [userId], references: [id]) // nullable for system events
+  action              String
+  entityType          String
+  entityId            String
+  metadata            Json
+  createdAt           DateTime @default(now())
+  
+  // Relations
+  user                users? @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Analytics events table - privacy-first visitor tracking
+model analytics_events {
+  id                  String   @id @default(uuid())
+  portfolioId         String   @relation(fields: [portfolioId], references: [id])
+  eventType           String   // e.g. view, link_click
+  visitorHash         String   // salted, rotating — never a persistent identifier or IP
+  countryCode         String?
+  deviceType          String?
+  referrerDomain      String?
+  occurredAt          DateTime @default(now())
+  
+  // Relations
+  portfolio           portfolios @relation(fields: [portfolioId], references: [id])
+  
+  @@index([portfolioId])
+  @@index([eventType])
+  @@index([occurredAt])
+  @@map("analytics_events")
+}
