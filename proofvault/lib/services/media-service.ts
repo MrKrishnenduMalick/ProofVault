@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma/client';
 import { R2Client } from '@/lib/storage/r2-client';
+import { validateFileUpload } from '@/lib/security/input-validator';
 
 export class MediaService {
   /**
@@ -13,6 +14,13 @@ export class MediaService {
   ): Promise<boolean> {
     // In a real implementation, this would check the user's plan limits
     // For now, we're just doing basic validation
+    
+    // Validate file properties
+    const validation = validateFileUpload(fileName, mimeType, fileSize);
+    if (!validation.isValid) {
+      console.warn(`File validation failed for user ${userId}:`, validation.errors);
+      return false;
+    }
     
     // Check file type
     const allowedTypes = [
@@ -53,6 +61,12 @@ export class MediaService {
     mimeType: string,
     uploadContext: string
   ) {
+    // Validate file name and type
+    const validation = validateFileUpload(fileName, mimeType, 0); // Size not known yet
+    if (!validation.isValid) {
+      throw new Error('File validation failed');
+    }
+
     // Determine the upload context and create appropriate R2 key
     let r2Key = '';
     switch (uploadContext) {
@@ -96,6 +110,18 @@ export class MediaService {
    * Confirms an upload and triggers variant generation
    */
   static async confirmUpload(mediaId: string, userId: string) {
+    // Verify that the user owns the media file
+    const mediaFile = await prisma.media_files.findFirst({
+      where: {
+        id: mediaId,
+        userId,
+      },
+    });
+
+    if (!mediaFile) {
+      throw new Error('Media file not found or access denied');
+    }
+
     // In a real implementation, this would:
     // 1. Verify the file exists in R2
     // 2. Get the actual file size from R2
@@ -103,7 +129,7 @@ export class MediaService {
     // 4. Trigger background job for variant generation
     
     // For now, we're just updating the record
-    const mediaFile = await prisma.media_files.update({
+    const updatedMediaFile = await prisma.media_files.update({
       where: {
         id: mediaId,
         userId,
@@ -117,10 +143,10 @@ export class MediaService {
     // Simulate triggering background job for variant generation
     // In a real app, this would queue a background job
     setTimeout(async () => {
-      await this.generateVariants(mediaFile.id);
+      await this.generateVariants(updatedMediaFile.id);
     }, 1000);
 
-    return mediaFile;
+    return updatedMediaFile;
   }
 
   /**
@@ -188,6 +214,12 @@ export class MediaService {
     fileSize: number,
     uploadContext: string
   ) {
+    // Validate the file before creating
+    const validation = validateFileUpload(fileName, mimeType, fileSize);
+    if (!validation.isValid) {
+      throw new Error(`File validation failed: ${validation.errors.join(', ')}`);
+    }
+
     // Determine the upload context and create appropriate R2 key
     let r2Key = '';
     switch (uploadContext) {
@@ -283,7 +315,7 @@ export class MediaService {
     });
 
     if (!mediaFile) {
-      throw new Error('Media file not found');
+      throw new Error('Media file not found or access denied');
     }
 
     // Delete the file and its variants from R2

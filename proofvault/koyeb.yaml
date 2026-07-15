@@ -1,0 +1,68 @@
+services:
+  - name: proofvault
+    type: web
+    source:
+      image: ghcr.io/proofvault/proofvault:latest
+    env_from:
+      - name: SUPABASE_URL
+        secret: SUPABASE_URL
+      - name: SUPABASE_ANON_KEY
+        secret: SUPABASE_ANON_KEY
+      - name: SUPABASE_SERVICE_ROLE_KEY
+        secret: SUPABASE_SERVICE_ROLE_KEY
+      - name: SUPABASE_JWT_SECRET
+        secret: SUPABASE_JWT_SECRET
+      - name: DATABASE_URL
+        secret: DATABASE_URL
+      - name: DIRECT_URL
+        secret: DIRECT_URL
+      - name: R2_ACCOUNT_ID
+        secret: R2_ACCOUNT_ID
+      - name: R2_ACCESS_KEY_ID
+        secret: R2_ACCESS_KEY_ID
+      - name: R2_SECRET_ACCESS_KEY
+        secret: R2_SECRET_ACCESS_KEY
+      - name: R2_BUCKET_NAME
+        secret: R2_BUCKET_NAME
+      - name: RESEND_API_KEY
+        secret: RESEND_API_KEY
+      - name: POSTHOG_API_KEY
+        secret: POSTHOG_API_KEY
+      - name: POSTHOG_HOST
+        secret: POSTHOG_HOST
+      - name: STRIPE_SECRET_KEY
+        secret: STRIPE_SECRET_KEY
+      - name: STRIPE_WEBHOOK_SECRET
+        secret: STRIPE_WEBHOOK_SECRET
+      - name: SENTRY_DSN
+        secret: SENTRY_DSN
+      - name: LOG_LEVEL
+        secret: LOG_LEVEL
+    env:
+      - name: NODE_ENV
+        value: production
+      - name: NEXT_TELEMETRY_DISABLED
+        value: "1"
+    ports:
+      - port: 3000
+        protocol: http
+    health_checks:
+      http_get:
+        path: /api/health
+        port: 3000
+      initial_delay_seconds: 30
+      timeout_seconds: 5
+      period_seconds: 10
+      success_threshold: 1
+      failure_threshold: 3
+    resources:
+      cpu: 0.5
+      memory: 1024Mi
+    scaling:
+      min_instances: 1
+      max_instances: 5
+      metrics:
+        - type: CPU_UTILIZATION
+          target: 70
+        - type: MEMORY_UTILIZATION
+          target: 80

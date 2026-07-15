@@ -23,6 +23,9 @@ export async function POST(request: Request) {
     // Verify the webhook signature
     const event = await StripeClient.verifyWebhookSignature(body, sig);
 
+    // Log the event for security monitoring (without sensitive data)
+    console.log(`Stripe webhook received: ${event.type} for ${event.data.object.id}`);
+
     // Handle the event based on its type
     switch (event.type) {
       case 'customer.subscription.created':
@@ -36,6 +39,7 @@ export async function POST(request: Request) {
         break;
       default:
         console.log(`Unhandled event type ${event.type}`);
+        break;
     }
 
     return NextResponse.json(
@@ -51,6 +55,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Stripe webhook error:', error);
     
+    // Return 400 to indicate invalid signature, but don't reveal details
     return NextResponse.json(
       {
         success: false,
